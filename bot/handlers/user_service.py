@@ -1,8 +1,7 @@
 # app/utils/user_service.py
 from sqlalchemy.dialects.postgresql import insert
-
-from core.logger import get_logger
-from db import User
+from app.db.models import User
+from app.core.logger import get_logger
 
 logger = get_logger()
 CACHE_TTL = 7 * 24 * 3600  # 7 days

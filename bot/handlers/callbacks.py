@@ -1,8 +1,9 @@
 # app/bot/handlers/callbacks.py
 from aiogram import Router, types
+
+from bot.handlers.user_service import upsert_user
 from core.logger import get_logger
 from utils.redis_client import get_redis
-from utils.user_service import upsert_user
 from bot.translations import t
 
 router = Router()
