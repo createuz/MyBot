@@ -32,7 +32,8 @@
 from contextlib import asynccontextmanager
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import declarative_base
-from core.config import conf
+
+from core import conf
 from core.logger import get_logger
 
 logger = get_logger()
@@ -45,8 +46,8 @@ def async_engine_builder(url: str):
         future=True,
         echo=True,
         pool_pre_ping=True,
-        pool_size=conf.c,
-        max_overflow=conf.db_pool_max,
+        pool_size=int(conf.bot.db_pool_min),
+        max_overflow=int(conf.bot.db_pool_max),
     )
 
 class AsyncDatabase:

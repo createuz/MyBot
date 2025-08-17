@@ -28,14 +28,21 @@ class DatabaseConfig:
         ).render_as_string(hide_password=False)
 
 
-ADMIN = 5383531061
+@dataclass
+class BotConfig:
+    token: str = os.getenv("BOT_TOKEN")
+    reds_url: str = os.getenv("REDIS_URL")
+    db_pool_max: int = os.getenv("DB_POOL_MAX")
+    db_pool_min: int = os.getenv("DB_POOL_MIN")
+    pg_max_connection: int = os.getenv("PG_MAX_CONNECTIONS")
 
 
 @dataclass
 class AppConfig:
     db: DatabaseConfig = field(default_factory=DatabaseConfig)
+    bot: BotConfig = field(default_factory=BotConfig)
 
 
 conf: AppConfig = AppConfig()
 # bot: Bot = Bot(token=conf.bot_token.token, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
-print("Database URL:", conf.db.build_db_url())
+# print("Database URL:", conf.db.build_db_url())

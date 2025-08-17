@@ -35,8 +35,15 @@ async def get_user_language(session, redis, chat_id: int) -> str:
     return "en"
 
 
-async def upsert_user(session, chat_id: int, username: str | None, first_name: str | None,
-                      is_premium: bool | None, language: str, added_by: str | None):
+async def upsert_user(
+        session,
+        chat_id: int,
+        username: str | None,
+        first_name: str | None,
+        is_premium: bool | None,
+        language: str,
+        added_by: str | None
+):
     """
     Atomically insert or update user row and return user's id.
     Uses Postgres ON CONFLICT.

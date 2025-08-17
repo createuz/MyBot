@@ -1,9 +1,9 @@
 # app/bot/handlers/callbacks.py
 from aiogram import Router, types
-from bot.translations import t
+from core.logger import get_logger
 from utils.redis_client import get_redis
 from utils.user_service import upsert_user
-from core.logger import get_logger
+from bot.translations import t
 
 router = Router()
 
@@ -16,39 +16,36 @@ async def lang_callback(callback: types.CallbackQuery, **data):
 
     lang = callback.data.split(":", 1)[1]
     tg_id = callback.from_user.id
-    username = callback.message.from_user.username if callback.message.from_user else None
-    first_name = callback.message.from_user.first_name if callback.message.from_user else None
+    username = callback.from_user.username
+    first_name = callback.from_user.first_name
     is_premium = getattr(callback.from_user, "is_premium", False)
 
-    # 1) Upsert DB (atomic). We'll commit now to guarantee DB persistence before caching.
+    # Upsert DB and commit (we want DB persistence before caching)
     try:
-        user_id = await upsert_user(
-            session=db,
-            chat_id=tg_id,
-            username=username,
-            first_name=first_name,
-            is_premium=is_premium,
-            language=lang,
-            added_by=None
-        )
-        await db.commit()  # explicitly ensure persistence before caching
-        logger.info(f"User language upserted, id={user_id}, lang={lang}")
+        user_id = await upsert_user(session=db, chat_id=tg_id, username=username,
+                                    first_name=first_name, is_premium=is_premium,
+                                    language=lang, added_by=None)
+        await db.commit()
+        db.info["committed_by_handler"] = True
+        logger.info(f"User upserted and committed: id={user_id}, chat_id={tg_id}, lang={lang}")
     except Exception as e:
-        await db.rollback()
-        logger.exception(f"Failed to upsert language for {tg_id}: {e}")
-        await callback.answer("Server error, try again later.", show_alert=True)
+        try:
+            await db.rollback()
+        except Exception:
+            logger.exception("Rollback failed after commit error in handler")
+        logger.exception(f"Failed to upsert/commit language for {tg_id}: {e}")
+        await callback.answer("Server error, please try again later.", show_alert=True)
         return
 
-    # 2) Update Redis cache (best-effort)
+    # Update Redis (best-effort)
     try:
         await redis.set(f"user:{tg_id}:lang", lang, ex=7 * 24 * 3600)
     except Exception as e:
-        logger.error(f"Redis SET failed for {tg_id}: {e}")
+        logger.warning(f"Redis SET failed for {tg_id}: {e}")
 
-    # 3) Reply user in selected language
-    await callback.answer(t(lang, "lang_set"), show_alert=False)
+    # Reply user
     try:
+        await callback.answer(t(lang, "lang_set"))
         await callback.message.edit_text(t(lang, "greeting"))
-    except Exception:
-        # editing may fail for old messages — ignore
-        pass
+    except Exception as e:
+        logger.warning(f"Failed to notify user after language change: {e}")
