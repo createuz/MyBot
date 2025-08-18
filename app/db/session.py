@@ -3,8 +3,8 @@ from contextlib import asynccontextmanager
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import declarative_base
 
-from core import conf
-from core.logger import get_logger
+from app.core import conf
+from app.core.logger import get_logger
 
 logger = get_logger()
 

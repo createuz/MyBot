@@ -2,18 +2,18 @@
 TRANSLATIONS = {
     "en": {
         "welcome": "Welcome! Choose your language:",
-        "lang_set": "Language set to English ✅",
-        "greeting": "Hello! Welcome to the bot."
+        "lang_set": "Language set ✅",
+        "greeting": "Hello! Welcome back."
     },
     "uz": {
         "welcome": "Xush kelibsiz! Tilni tanlang:",
-        "lang_set": "Til o‘zgartirildi: O‘zbekcha ✅",
+        "lang_set": "Til o‘zgartirildi ✅",
         "greeting": "Salom! Botga xush kelibsiz."
     },
     "ru": {
         "welcome": "Добро пожаловать! Выберите язык:",
-        "lang_set": "Язык установлен: Русский ✅",
-        "greeting": "Привет! Добро пожаловать в бота."
+        "lang_set": "Язык установлен ✅",
+        "greeting": "Привет! Добро пожаловать."
     }
 }
 

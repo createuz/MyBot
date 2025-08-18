@@ -1,7 +1,7 @@
 # app/db/models.py
 from datetime import datetime, timezone
 
-from sqlalchemy import Integer, BigInteger, String, DateTime, Boolean
+from sqlalchemy import Integer, BigInteger, String, DateTime, Boolean, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from .session import Base
@@ -22,3 +22,4 @@ class User(Base):
     language: Mapped[str] = mapped_column(String(8), nullable=False, default="en")
     added_by: Mapped[str | None] = mapped_column(String, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now, nullable=False)
+
