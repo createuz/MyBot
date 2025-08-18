@@ -1,35 +1,5 @@
-# from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
-# from sqlalchemy.orm import declarative_base
-#
-# from app.core.config import conf
-# from app.core.logger import logger
-#
-# Base = declarative_base()
-#
-# engine = create_async_engine(
-#     conf.database_url,
-#     echo=False,
-#     future=True,
-#     pool_pre_ping=True,
-#     pool_size=conf.db_pool_min,
-#     max_overflow=conf.db_pool_max,
-# )
-#
-# AsyncSessionLocal = async_sessionmaker(bind=engine, class_=AsyncSession, expire_on_commit=False, autoflush=False)
-#
-#
-# async def init_db():
-#     # development only: create tables (in prod use alembic migrations)
-#     async with engine.begin() as conn:
-#         await conn.run_sync(Base.metadata.create_all)
-#     logger.info("✅ DB initialized (create_all)")
-#
-#
-# async def dispose_db():
-#     await engine.dispose()
-#     logger.info("🛑 DB engine disposed")
-# app/db/session.py
 from contextlib import asynccontextmanager
+
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import declarative_base
 
@@ -40,6 +10,7 @@ logger = get_logger()
 
 Base = declarative_base()
 
+
 def async_engine_builder(url: str):
     return create_async_engine(
         url,
@@ -49,6 +20,7 @@ def async_engine_builder(url: str):
         pool_size=int(conf.bot.db_pool_min),
         max_overflow=int(conf.bot.db_pool_max),
     )
+
 
 class AsyncDatabase:
     def __init__(self, db_url: str):
@@ -77,6 +49,7 @@ class AsyncDatabase:
     async def dispose(self):
         await self._engine.dispose()
         logger.info("DB disposed")
+
 
 # single global instance (imported where needed)
 db = AsyncDatabase(db_url=str(conf.db.build_db_url()))

@@ -1,10 +1,13 @@
 # app/utils/user_service.py
+
 from sqlalchemy.dialects.postgresql import insert
-from app.db.models import User
-from app.core.logger import get_logger
+
+from core.logger import get_logger
+from db import User
 
 logger = get_logger()
 CACHE_TTL = 7 * 24 * 3600  # 7 days
+
 
 # --- Redis-only: get language by chat id (no DB)
 async def redis_get_lang(redis, chat_id: int) -> str | None:
@@ -22,6 +25,7 @@ async def redis_get_lang(redis, chat_id: int) -> str | None:
         logger.warning(f"Redis GET error for {chat_id}: {e}")
         return None
 
+
 # --- DB-only: get language (no Redis actions)
 async def db_get_lang(session, chat_id: int) -> str | None:
     try:
@@ -35,6 +39,7 @@ async def db_get_lang(session, chat_id: int) -> str | None:
     except Exception as e:
         logger.exception(f"DB read error for {chat_id}: {e}")
         return None
+
 
 # --- Combined helper (calls redis first, then DB; returns language or None)
 async def get_lang_cache_then_db(session, redis, chat_id: int) -> str | None:
@@ -52,6 +57,7 @@ async def get_lang_cache_then_db(session, redis, chat_id: int) -> str | None:
         except Exception as e:
             logger.warning(f"Redis SET failed for {chat_id}: {e}")
     return lang
+
 
 # --- Ensure user exists: create user if not exists (atomically)
 async def ensure_user_exists(session, chat_id: int, username: str | None, first_name: str | None,
@@ -85,6 +91,7 @@ async def ensure_user_exists(session, chat_id: int, username: str | None, first_
     except Exception as e:
         logger.exception(f"ensure_user_exists failed for {chat_id}: {e}")
         raise
+
 
 # --- Upsert user language (atomic) — used when user chooses language
 async def upsert_user(session, chat_id: int, username: str | None, first_name: str | None,
