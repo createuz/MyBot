@@ -22,32 +22,31 @@ async def lang_callback(callback: types.CallbackQuery, **data):
     first_name = callback.from_user.first_name
     is_premium = getattr(callback.from_user, "is_premium", False)
 
-    # Upsert DB and commit immediately
     try:
         user_id = await upsert_user(session=db, chat_id=tg_id, username=username,
                                     first_name=first_name, is_premium=is_premium,
                                     language=lang, added_by=None)
         await db.commit()
         db.info["committed_by_handler"] = True
-        logger.info(f"User upserted and committed id={user_id}, chat_id={tg_id}, lang={lang}")
+        logger.info("lang_callback: upserted and committed id=%s chat_id=%s lang=%s", user_id, tg_id, lang)
     except Exception as e:
         try:
             await db.rollback()
         except Exception:
-            logger.exception("Rollback failed in lang_callback")
-        logger.exception("Failed to upsert/commit language for %s: %s", tg_id, e)
-        await callback.answer("Server error, please try again later.", show_alert=True)
+            logger.exception("lang_callback: rollback failed")
+        logger.exception("lang_callback: failed to upsert/commit for %s: %s", tg_id, e)
+        await callback.answer("Server error, try again later.", show_alert=True)
         return
 
-    # Now update Redis (best-effort)
+    # Update Redis best-effort
     try:
         await redis.set(f"user:{tg_id}:lang", lang, ex=7 * 24 * 3600)
     except Exception as e:
-        logger.warning("Redis SET failed for %s: %s", tg_id, e)
+        logger.warning("lang_callback: redis set failed for %s: %s", tg_id, e)
 
     # Notify user
     try:
         await callback.answer(t(lang, "lang_set"))
         await callback.message.edit_text(t(lang, "greeting"))
     except Exception as e:
-        logger.warning("Failed to notify user %s after lang change: %s", tg_id, e)
+        logger.warning("lang_callback: notify failed for %s: %s", tg_id, e)

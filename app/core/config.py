@@ -38,9 +38,20 @@ class BotConfig:
 
 
 @dataclass
+class WebhookConfig:
+    enabled: bool = bool(os.getenv("USE_WEBHOOK"))
+    url: str = os.getenv("WEBHOOK_URL")
+    secret_token: str = os.getenv("WEBHOOK_SECRET_TOKEN")
+    host: str = os.getenv("WEBHOOK_HOST")
+    port: int = int(os.getenv("WEBHOOK_PORT"))
+    max_updates_in_queue: int = int(os.getenv("MAX_UPDATES_IN_QUEUE"))
+
+
+@dataclass
 class AppConfig:
     db: DatabaseConfig = field(default_factory=DatabaseConfig)
     bot: BotConfig = field(default_factory=BotConfig)
+    webhook: WebhookConfig = field(default_factory=WebhookConfig)
 
 
 conf: AppConfig = AppConfig()

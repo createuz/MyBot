@@ -1,27 +1,35 @@
 # app/core/logger.py
 import logging
 import sys
-from typing import Optional
+
+import orjson
+import structlog
+from structlog.typing import FilteringBoundLogger
 
 
-class RequestFormatter(logging.Formatter):
-    def format(self, record):
-        request_id = getattr(record, "request_id", None)
-        if request_id:
-            record.msg = f"[rid={request_id}] {record.getMessage()}"
-            record.args = ()
-        return super().format(record)
+def orjson_dumps(v, *, default=None):
+    return orjson.dumps(v, default=default).decode()
 
 
-logger = logging.getLogger("mybot")
-logger.setLevel(logging.INFO)
-handler = logging.StreamHandler(sys.stdout)
-fmt = "%(asctime)s | %(levelname)s | %(name)s | %(message)s"
-handler.setFormatter(RequestFormatter(fmt))
-logger.addHandler(handler)
+def setup_logger(level: int = logging.INFO) -> FilteringBoundLogger:
+    logging.basicConfig(level=level, stream=sys.stdout, format="%(message)s")
+    processors = [
+        structlog.processors.add_log_level,
+        structlog.processors.TimeStamper(fmt="iso", utc=True),
+        structlog.processors.StackInfoRenderer(),
+        structlog.processors.format_exc_info,
+        structlog.processors.JSONRenderer(serializer=orjson_dumps),
+    ]
+    structlog.configure(processors=processors,
+                        wrapper_class=structlog.make_filtering_bound_logger(level),
+                        logger_factory=structlog.PrintLoggerFactory())
+    # Reduce SQLAlchemy noise by default
+    logging.getLogger("sqlalchemy.engine").setLevel(logging.WARNING)
+    return structlog.get_logger()
 
 
-def get_logger(request_id: Optional[str] = None):
+def get_logger(request_id: str | None = None):
+    l = structlog.get_logger()
     if request_id:
-        return logging.LoggerAdapter(logger, {"request_id": request_id})
-    return logger
+        return l.bind(rid=request_id)
+    return l
