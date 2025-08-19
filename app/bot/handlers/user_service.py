@@ -1,10 +1,13 @@
 # app/utils/user_service.py
+from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
-from app.db.models import User
+
 from app.core.logger import get_logger
+from app.db.models import User
 
 logger = get_logger()
 CACHE_TTL = 7 * 24 * 3600  # 7 days
+
 
 # Redis-only get
 async def redis_get_lang(redis, chat_id: int) -> str | None:
@@ -22,18 +25,21 @@ async def redis_get_lang(redis, chat_id: int) -> str | None:
         logger.warning(f"Redis GET error for {chat_id}: {e}")
         return None
 
+
 # DB-only get
 async def db_get_lang(session, chat_id: int) -> str | None:
     try:
-        row = await session.execute(User.__table__.select().where(User.chat_id == chat_id))
-        user = row.scalar_one_or_none()
+        result = await session.execute(select(User).where(User.chat_id == chat_id))
+        user = result.scalars().first()  # ORM mapped instance or None
         if user:
-            logger.debug(f"db_get_lang found {chat_id} -> {user.language}")
+            logger.debug(f"db_get_lang: found in DB {chat_id} -> {user.language}")
             return user.language or "en"
+        logger.debug(f"db_get_lang: not found in DB {chat_id}")
         return None
     except Exception as e:
         logger.exception(f"DB read error for {chat_id}: {e}")
         return None
+
 
 # Combined: redis -> db (and cache db result)
 async def get_lang_cache_then_db(session, redis, chat_id: int) -> str | None:
@@ -48,6 +54,7 @@ async def get_lang_cache_then_db(session, redis, chat_id: int) -> str | None:
         except Exception as e:
             logger.warning(f"Redis SET failed for {chat_id}: {e}")
     return lang
+
 
 # Ensure user exists (create if not)
 async def ensure_user_exists(session, chat_id: int, username: str | None, first_name: str | None,
@@ -75,6 +82,7 @@ async def ensure_user_exists(session, chat_id: int, username: str | None, first_
     except Exception as e:
         logger.exception(f"ensure_user_exists failed for {chat_id}: {e}")
         raise
+
 
 # Upsert user including language (used when user selects language)
 async def upsert_user(session, chat_id: int, username: str | None, first_name: str | None,
