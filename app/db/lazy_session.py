@@ -1,42 +1,60 @@
 # app/db/lazy_session.py
-from typing import Optional
+from typing import Optional, Callable
+
+from sqlalchemy.ext.asyncio import AsyncSession
 
 
 class LazySessionProxy:
     """
-    Lazily create AsyncSession from an async_sessionmaker when first used.
-    Exposes .info dict even before real session exists.
+    Small proxy that delays creating AsyncSession until it's actually used.
+    API:
+      proxy = LazySessionProxy(session_maker=AsyncSessionLocal)
+      # anywhere in handlers: session = data['db']; await session.execute(...)
+    Implementation detail:
+      - session_created flag
+      - get_underlying_session() returns actual AsyncSession
+      - implements commit(), rollback(), close(), execute(), scalar_one(), etc. by delegating
     """
 
-    def __init__(self, session_maker):
-        self._SessionMaker = session_maker
-        self._session: Optional[object] = None
-        self._info = {}
+    def __init__(self, session_maker: Callable[[], AsyncSession]):
+        self._maker = session_maker
+        self._session: Optional[AsyncSession] = None
+        self.session_created = False
 
-    @property
-    def session_created(self) -> bool:
-        return self._session is not None
+    def _ensure(self):
+        if not self._session:
+            self._session = self._maker()
+            self.session_created = True
+        return self._session
 
-    @property
-    def info(self):
-        # Return real session.info if created, else the local dict
-        if self._session is not None and hasattr(self._session, "info"):
-            return self._session.info
-        return self._info
+    def get_underlying_session(self) -> Optional[AsyncSession]:
+        return self._session
 
-    def _ensure_session(self):
-        if self._session is None:
-            # Create AsyncSession instance
-            self._session = self._SessionMaker()
-            # transfer info
-            try:
-                if isinstance(self._info, dict) and hasattr(self._session, "info"):
-                    self._session.info.update(self._info)
-            except Exception:
-                pass
+    # Async helper methods to delegate
+    async def execute(self, *args, **kwargs):
+        sess = self._ensure()
+        return await sess.execute(*args, **kwargs)
 
-    def __getattr__(self, item):
-        # On any attribute access, ensure real session exists and forward
-        # note: 'info' will be property accessed before __getattr__
-        self._ensure_session()
-        return getattr(self._session, item)
+    async def commit(self):
+        if not self._session:
+            return
+        return await self._session.commit()
+
+    async def rollback(self):
+        if not self._session:
+            return
+        return await self._session.rollback()
+
+    async def close(self):
+        if not self._session:
+            return
+        try:
+            await self._session.close()
+        finally:
+            self._session = None
+            self.session_created = False
+
+    # convenience
+    async def scalar_one(self):
+        res = await self.execute()
+        return res.scalar_one()

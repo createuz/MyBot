@@ -23,13 +23,11 @@ def setup_logger(level: int = logging.INFO) -> FilteringBoundLogger:
     structlog.configure(processors=processors,
                         wrapper_class=structlog.make_filtering_bound_logger(level),
                         logger_factory=structlog.PrintLoggerFactory())
-    # Reduce SQLAlchemy noise by default
+    # reduce SQLAlchemy noise by default
     logging.getLogger("sqlalchemy.engine").setLevel(logging.WARNING)
     return structlog.get_logger()
 
 
 def get_logger(request_id: str | None = None):
     l = structlog.get_logger()
-    if request_id:
-        return l.bind(rid=request_id)
-    return l
+    return l.bind(rid=request_id) if request_id else l

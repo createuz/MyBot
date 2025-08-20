@@ -13,10 +13,9 @@ router = Router()
 
 @router.message(Command("start"))
 async def start_handler(message: types.Message, **data):
-    db = data.get("db")  # LazySessionProxy
+    db = data.get("db")
     request_id = data.get("request_id")
     logger = get_logger(request_id)
-
     tg_id = message.from_user.id
     username = message.from_user.username
     first_name = message.from_user.first_name
@@ -24,34 +23,26 @@ async def start_handler(message: types.Message, **data):
 
     redis = await get_redis()
 
-    # Redis-first quick path + DB fallback
+    # 1) Try Redis then DB
     lang = await get_lang_cache_then_db(db, redis, tg_id)
     if lang:
         await message.answer(t(lang, "greeting"))
         return
 
-    # Not found anywhere -> create minimal user with default 'en'
+    # 2) ensure user exists with default lang=en and commit immediately
     try:
-        user_id = await ensure_user_exists(session=db, chat_id=tg_id,
-                                           username=username, first_name=first_name,
+        user_id = await ensure_user_exists(session=db, chat_id=tg_id, username=username, first_name=first_name,
                                            is_premium=is_premium, default_lang="en")
-    except Exception:
-        logger.exception("start_handler: ensure_user_exists failed for %s", tg_id)
-        await message.answer("Server error, try again later.")
-        return
-
-    # Commit immediately so DB persists even if message sending fails
-    try:
         await db.commit()
         db.info["committed_by_handler"] = True
-        logger.info("start_handler: committed new/ensured user id=%s chat_id=%s", user_id, tg_id)
-    except Exception:
-        logger.exception("start_handler: db commit failed for %s", tg_id)
+        logger.info("start: user ensured id=%s chat_id=%s", user_id, tg_id)
+    except Exception as e:
+        logger.exception("start: ensure_user failed")
         await message.answer("Server error, try again later.")
         return
 
-    # Ask language (non-blocking: failure to send won't rollback DB)
+    # 3) send language keyboard (non-blocking)
     try:
         await message.answer(t("en", "welcome"), reply_markup=language_keyboard())
-    except Exception as e:
-        logger.warning("start_handler: failed to send welcome to %s: %s", tg_id, e)
+    except Exception:
+        logger.warning("start: sending welcome failed")

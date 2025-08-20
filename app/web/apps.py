@@ -1,96 +1,105 @@
 # app/web/app.py
-from typing import Tuple
-
 import aiojobs
 from aiohttp import web
 
 from app.core.logger import get_logger
+# DB / Redis helpers
+from app.db.session import init_db, dispose_db
+from app.utils.redis_client import init_redis, close_redis
 from app.web.health import register as register_health
 from app.web.metrics import register as register_metrics
+from app.web.middlewares import request_id_middleware
 from app.web.tg_updates import tg_updates_app
 
-# If you have other subapps, add them here as (prefix, subapp_callable)
-DEFAULT_SUBAPPS: Tuple[tuple[str, web.Application], ...] = (
+DEFAULT_SUBAPPS = (
     ("/tg/webhooks/", tg_updates_app),
 )
 
 
 async def aiohttp_on_startup(app: web.Application) -> None:
-    dp = app["dp"]
     logger = get_logger()
-    logger.info("aiohttp_on_startup: emitting dispatcher startup")
+    dp = app["dp"]
+    bot = app.get("bot")
+    logger.info("aiohttp_on_startup: init redis & db")
+    # init redis and db (idempotent)
+    await init_redis()
+    await init_db()
+    # emit dispatcher startup so handlers can run their startup hooks
     workflow_data = {"app": app, "dispatcher": dp}
-    if "bot" in app:
-        workflow_data["bot"] = app["bot"]
+    if bot is not None:
+        workflow_data["bot"] = bot
     await dp.emit_startup(**workflow_data)
+    logger.info("aiohttp_on_startup: dispatcher started")
 
 
 async def aiohttp_on_shutdown(app: web.Application) -> None:
-    dp = app["dp"]
     logger = get_logger()
-    logger.info("aiohttp_on_shutdown: emitting dispatcher shutdown")
-    # Properly close scheduler if present
+    dp = app["dp"]
+    bot = app.get("bot")
+    logger.info("aiohttp_on_shutdown: shutting down dispatcher + resources")
+
+    # emit dispatcher shutdown
+    workflow_data = {"app": app, "dispatcher": dp}
+    if bot is not None:
+        workflow_data["bot"] = bot
+    await dp.emit_shutdown(**workflow_data)
+
+    # close scheduler if present
     scheduler = app.get("scheduler")
     if scheduler is not None:
         try:
-            # aiojobs Scheduler has close() async in newer versions
             await scheduler.close()
-        except AttributeError:
-            try:
-                scheduler.close()
-            except Exception as e:
-                logger.warning("Scheduler close fallback failed: %s", e)
-        except Exception as e:
-            logger.warning("Scheduler close failed: %s", e)
+        except Exception:
+            logger.warning("scheduler close threw")
 
-    workflow_data = {"app": app, "dispatcher": dp}
-    if "bot" in app:
-        workflow_data["bot"] = app["bot"]
-    await dp.emit_shutdown(**workflow_data)
-
-    # close bot.session, storage, pools if still present
+    # close dispatcher storage
     try:
-        if "bot" in app:
-            bot = app["bot"]
-            try:
-                await bot.session.close()
-            except Exception:
-                logger.debug("bot.session close ignored")
-        if "dp" in app:
-            dispatcher = app["dp"]
-            try:
-                await dispatcher.storage.close()
-            except Exception:
-                logger.debug("dispatcher.storage close ignored")
-    except Exception as e:
-        logger.exception("Error during aiohttp shutdown cleanup: %s", e)
+        await dp.storage.close()
+    except Exception:
+        logger.debug("dispatcher.storage close ignored")
+
+    # close bot session
+    if bot is not None:
+        try:
+            await bot.session.close()
+        except Exception:
+            logger.debug("bot.session close ignored")
+
+    # close redis and dispose db
+    try:
+        await close_redis()
+    except Exception:
+        logger.warning("close_redis failed")
+    try:
+        await dispose_db()
+    except Exception:
+        logger.warning("dispose_db failed")
+
+    logger.info("aiohttp_on_shutdown: done")
 
 
 async def setup_aiohttp_app(bot, dp) -> web.Application:
     """
-    Create aiohttp main app, mount subapps (webhooks), and register startup/shutdown hooks.
-    :param bot: aiogram.Bot instance (optional)
-    :param dp: aiogram.Dispatcher instance (required)
-    :return: aiohttp.web.Application
+    Create main aiohttp app, mount subapps, register health/metrics and lifecycle hooks.
     """
     logger = get_logger()
     scheduler = aiojobs.Scheduler()
-    app = web.Application()
-    # mount subapps
-    for prefix, subapp_factory in DEFAULT_SUBAPPS:
-        subapp = subapp_factory()  # subapp_factory returns an aiohttp Application
-        # inject dp, bot, scheduler into subapp
+    app = web.Application(middlewares=[request_id_middleware])
+
+    # add subapps
+    for prefix, factory in DEFAULT_SUBAPPS:
+        subapp = factory()
         subapp["bot"] = bot
         subapp["dp"] = dp
         subapp["scheduler"] = scheduler
         app.add_subapp(prefix, subapp)
 
-    # global resources
+    # global context
     app["bot"] = bot
     app["dp"] = dp
     app["scheduler"] = scheduler
 
-    # register health and metrics
+    # register endpoints
     register_health(app)
     register_metrics(app)
 
@@ -98,5 +107,5 @@ async def setup_aiohttp_app(bot, dp) -> web.Application:
     app.on_startup.append(aiohttp_on_startup)
     app.on_shutdown.append(aiohttp_on_shutdown)
 
-    logger.info("setup_aiohttp_app: app configured with %s subapps", len(DEFAULT_SUBAPPS))
+    logger.info("setup_aiohttp_app: ready")
     return app

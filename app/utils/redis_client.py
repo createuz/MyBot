@@ -4,15 +4,22 @@ from redis.asyncio import Redis
 from app.core.config import conf
 from app.core.logger import get_logger
 
-logger = get_logger()
 _redis = None
+logger = get_logger()
+
+
+async def init_redis():
+    global _redis
+    if _redis is None:
+        _redis = Redis.from_url(conf.redis_url, decode_responses=False)
+        await _redis.ping()
+        logger.info("Redis client initialized")
+    return _redis
 
 
 async def get_redis():
-    global _redis
     if _redis is None:
-        _redis = Redis.from_url(conf.bot.reds_url, decode_responses=True)
-        logger.info("Redis client initialized")
+        return await init_redis()
     return _redis
 
 
@@ -21,7 +28,6 @@ async def close_redis():
     if _redis:
         try:
             await _redis.close()
-            logger.info("Redis closed")
-        except Exception as e:
-            logger.warning(f"Redis close failed: {e}")
+        except Exception:
+            logger.warning("Redis close failed")
         _redis = None

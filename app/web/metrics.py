@@ -1,12 +1,12 @@
 # app/web/metrics.py
 from aiohttp import web
-from prometheus_client import Counter, generate_latest, CONTENT_TYPE_LATEST, CollectorRegistry, Histogram
+from prometheus_client import generate_latest, CONTENT_TYPE_LATEST, CollectorRegistry, Counter, Histogram
 
-# minimal registry (you can use a global registry if preferred)
+# Use a simple global registry here (can be replaced by default REGISTRY)
 REGISTRY = CollectorRegistry()
 REQUESTS = Counter("http_requests_total", "Total HTTP requests", ["method", "endpoint"], registry=REGISTRY)
-WEBHOOK_UPDATES = Counter("telegram_webhook_updates_total", "Telegram webhook updates received", registry=REGISTRY)
-REQUEST_LATENCY = Histogram("http_request_latency_seconds", "HTTP request latency seconds", ["endpoint"], registry=REGISTRY)
+WEBHOOK_UPDATES = Counter("telegram_webhook_updates_total", "Telegram webhook updates total", registry=REGISTRY)
+REQUEST_LATENCY = Histogram("http_request_latency_seconds", "HTTP request latency", ["endpoint"], registry=REGISTRY)
 
 
 async def metrics_handler(request: web.Request) -> web.Response:
@@ -15,5 +15,4 @@ async def metrics_handler(request: web.Request) -> web.Response:
 
 
 def register(app: web.Application) -> None:
-    # Expose Prometheus metrics on /metrics
     app.router.add_get("/metrics", metrics_handler)

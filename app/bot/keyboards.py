@@ -1,10 +1,10 @@
 # app/bot/keyboards.py
-from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+
 
 def language_keyboard():
     kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🇺🇿 O'zbekcha", callback_data="lang:uz")],
-        [InlineKeyboardButton(text="🇷🇺 Русский", callback_data="lang:ru")],
-        [InlineKeyboardButton(text="🇬🇧 English", callback_data="lang:en")],
+        [InlineKeyboardButton(text="English", callback_data="lang:en"),
+         InlineKeyboardButton(text="O'zbek", callback_data="lang:uz")]
     ])
     return kb

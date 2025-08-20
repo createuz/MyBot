@@ -1,82 +1,53 @@
 # app/bot/middlewares/db_middleware.py
 from aiogram import BaseMiddleware
-from typing import Callable, Any, Awaitable
+
 from app.core.logger import get_logger
 from app.db.lazy_session import LazySessionProxy
-from app.db.session import db
+from app.db.session import AsyncSessionLocal
+
 
 class DBSessionMiddleware(BaseMiddleware):
-    async def __call__(self, handler: Callable[[Any, dict], Awaitable[Any]], event: Any, data: dict):
+    async def __call__(self, handler, event, data):
         request_id = data.get("request_id")
         logger = get_logger(request_id)
-
-        # Provide lazy proxy
-        proxy = LazySessionProxy(db._SessionMaker)
+        proxy = LazySessionProxy(session_maker=AsyncSessionLocal)
         data["db"] = proxy
-
         try:
             result = await handler(event, data)
-
-            # If no real session was created — nothing to commit/close
+            # if session never created, skip commit/close
             if not proxy.session_created:
-                logger.debug("No DB session created during request — skipping commit/close")
+                logger.debug("DBSessionMiddleware: no session created")
                 return result
-
-            session = proxy._session
-
-            # If handler committed itself - skip middleware commit
-            if getattr(session, "info", {}).get("committed_by_handler"):
-                logger.debug("Handler committed; skipping middleware commit")
-                try:
-                    await session.close()
-                except Exception as e:
-                    logger.warning(f"Close session failed: {e}")
+            session = proxy.get_underlying_session()
+            if session.info.get("committed_by_handler"):
+                logger.debug("DBSessionMiddleware: handler already committed")
+                await session.close()
                 return result
-
-            # Commit only if session has pending changes
+            # commit only if changes or in_transaction
             try:
-                has_changes = bool(session.new) or bool(session.dirty) or bool(session.deleted)
+                has_changes = bool(session.new) or bool(session.dirty) or bool(session.deleted) or bool(
+                    session.in_transaction())
             except Exception:
                 has_changes = True
-
             if has_changes:
-                try:
-                    await session.commit()
-                    logger.info("DB committed (middleware)")
-                except Exception as e:
-                    try:
-                        await session.rollback()
-                    except Exception as re:
-                        logger.error(f"Rollback failed: {re}")
-                    logger.exception(f"DB commit failed in middleware: {e}")
-                    raise
+                await session.commit()
+                logger.info("DBSessionMiddleware: committed")
             else:
-                logger.debug("No DB changes detected — skipping commit (middleware)")
-
-            try:
-                await session.close()
-            except Exception as e:
-                logger.warning(f"Close session failed: {e}")
-
+                logger.debug("DBSessionMiddleware: nothing to commit")
+            await session.close()
             return result
-
         except Exception as exc:
-            # Exception handling: rollback if session created and not handler-committed
             if proxy.session_created:
-                session = proxy._session
-                if getattr(session, "info", {}).get("committed_by_handler"):
-                    logger.warning("Handler raised after committing — skipping rollback")
-                else:
+                session = proxy.get_underlying_session()
+                if not session.info.get("committed_by_handler"):
                     try:
                         await session.rollback()
-                        logger.info("DB rolled back (middleware)")
-                    except Exception as rbe:
-                        logger.error(f"Rollback failed: {rbe}")
+                        logger.info("DBSessionMiddleware: rolled back due to exception")
+                    except Exception:
+                        logger.exception("rollback failed")
                 try:
                     await session.close()
-                except Exception as e:
-                    logger.warning(f"Close session failed after exception: {e}")
-            else:
-                logger.debug("Exception occurred but DB session was never created")
-            logger.exception("Exception in handler (caught in middleware)")
+                except Exception:
+                    logger.exception("session close failed")
+            logger.exception("Exception in handler")
             raise
