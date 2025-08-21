@@ -1,51 +1,45 @@
 # app/bot/handlers/callbacks.py
 from aiogram import Router
+from aiogram.fsm.context import FSMContext
+from aiogram.types import CallbackQuery
 
-from app.bot.handlers.user_service import upsert_user
+from app.bot.handlers.user_service import update_user_language
 from app.bot.translations import t
 from app.core.logger import get_logger
-from app.utils.redis_client import get_redis
+from app.utils.db_helpers import safe_commit_if_needed
+from app.utils.redis_client import get_redis, redis_set, redis_delete
+from app.utils.states import LanguageSelection
 
 router = Router()
+CACHE_TTL = 7 * 24 * 3600
 
 
 @router.callback_query(lambda c: c.data and c.data.startswith("lang:"))
-async def lang_callback(callback, **data):
+async def lang_callback(cb: CallbackQuery, state: FSMContext, **data):
     db = data.get("db")
-    request_id = data.get("request_id")
-    logger = get_logger(request_id)
-    redis = await get_redis()
+    logger = get_logger(data.get("request_id"))
+    tg_id = cb.from_user.id
+    lang = cb.data.split(":", 1)[1]
 
-    lang = callback.data.split(":", 1)[1]
-    tg_id = callback.from_user.id
-    username = callback.from_user.username
-    first_name = callback.from_user.first_name
-    is_premium = getattr(callback.from_user, "is_premium", False)
-
-    try:
-        user_id = await upsert_user(session=db, chat_id=tg_id, username=username, first_name=first_name,
-                                    is_premium=is_premium, language=lang)
-        await db.commit()
-        print(db.info["committed_by_handler"])
-        db.info["committed_by_handler"] = True
-        print(db.info["committed_by_handler"])
-        logger.info("lang_callback: user upserted id=%s chat_id=%s lang=%s", user_id, tg_id, lang)
-    except Exception:
-        try:
-            await db.rollback()
-        except Exception:
-            logger.exception("rollback failed")
-        await callback.answer("Server error, try again later.", show_alert=True)
+    current_state = await state.get_state()
+    if current_state != LanguageSelection.waiting.state:
+        await cb.answer("Please use /start to change language.", show_alert=False)
         return
 
-    # best-effort cache
-    try:
-        await redis.set(f"user:{tg_id}:lang", lang, ex=7 * 24 * 3600)
-    except Exception:
-        logger.warning("lang_callback: redis set failed for %s", tg_id)
+    # update DB language
+    await update_user_language(db, tg_id, lang)
+    await safe_commit_if_needed(db)
 
+    # update redis and remove pending
+    redis = await get_redis()
+    if redis:
+        await redis_set(f"user:{tg_id}:lang", lang, ex=CACHE_TTL)
+        await redis_delete(f"user:{tg_id}:pending_lang")
+
+    # clear state and reply
+    await state.clear()
+    await cb.answer(t(lang, "lang_set"))
     try:
-        await callback.answer(t(lang, "lang_set"))
-        await callback.message.edit_text(t(lang, "greeting"))
+        await cb.message.edit_text(t(lang, "greeting"))
     except Exception:
-        logger.warning("notify failed")
+        await cb.message.reply(t(lang, "greeting"))

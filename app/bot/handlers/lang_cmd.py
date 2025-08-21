@@ -1,25 +1,27 @@
 # app/bot/handlers/lang_cmd.py
-from aiogram import Router, types
+from aiogram import Router
 from aiogram.filters.command import Command
+from aiogram.fsm.context import FSMContext
 
 from app.bot.handlers.user_service import get_lang_cache_then_db
 from app.bot.keyboards import language_keyboard
-from app.core.logger import get_logger
-from app.utils.redis_client import get_redis
+from app.utils.redis_client import get_redis, redis_get
+from app.utils.states import LanguageSelection
 
-router = Router(name="lang_cmd")
+router = Router()
 
 
 @router.message(Command("lang"))
-async def lang_command(message: types.Message, **data):
-    """
-    /lang komandasi — foydalanuvchining hozirgi tilini ko'rsatadi va tilni yangilash uchun tugmalarni yuboradi.
-    Redis-first oqimga mos: agar redis hit bo'lsa DB sessiya yaratilmaydi.
-    """
-    db = data.get("db")  # LazySessionProxy (yoki AsyncSession)
-    request_id = data.get("request_id")
-    logger = get_logger(request_id)
+async def lang_command(message, state: FSMContext, **data):
+    db = data.get("db")
     tg_id = message.from_user.id
+
     redis = await get_redis()
-    lang = await get_lang_cache_then_db(session=db, redis_client=redis, chat_id=tg_id)
-    await message.answer(f"Your current language: {lang}\nChoose new:", reply_markup=language_keyboard())
+    pending = await redis_get(f"user:{tg_id}:pending_lang") if redis else None
+    if pending:
+        await state.set_state(LanguageSelection.waiting)  # or import class and use .waiting
+        await message.answer("Please choose your language:", reply_markup=language_keyboard())
+        return
+
+    lang = await get_lang_cache_then_db(db, redis, tg_id)
+    await message.answer(f"Your current language: {lang or 'not set'}\nChoose new:", reply_markup=language_keyboard())

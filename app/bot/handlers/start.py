@@ -1,48 +1,48 @@
 # app/bot/handlers/start.py
-from aiogram import Router, types
+from aiogram import Router
 from aiogram.filters.command import Command
+from aiogram.fsm.context import FSMContext
 
-from app.bot.handlers.user_service import get_lang_cache_then_db, ensure_user_exists
+from app.bot.handlers.user_service import get_lang_cache_then_db, ensure_user_insert_if_missing
 from app.bot.keyboards import language_keyboard
 from app.bot.translations import t
 from app.core.logger import get_logger
-from app.utils.redis_client import get_redis
+from app.utils.db_helpers import safe_commit_if_needed
+from app.utils.redis_client import get_redis, redis_set
+from app.utils.states import LanguageSelection
 
 router = Router()
 
+PENDING_TTL = 24 * 3600
+
 
 @router.message(Command("start"))
-async def start_handler(message: types.Message, **data):
-    db = data.get("db")
-    request_id = data.get("request_id")
-    logger = get_logger(request_id)
+async def start_handler(message, state: FSMContext, **data):
+    db = data.get("db")  # LazySessionProxy
+    logger = get_logger(data.get("request_id"))
     tg_id = message.from_user.id
     username = message.from_user.username
     first_name = message.from_user.first_name
     is_premium = getattr(message.from_user, "is_premium", False)
 
+    # clear any FSM state on /start
+    await state.clear()
+
     redis = await get_redis()
 
-    # 1) Try Redis then DB
+    # 1) redis-first
     lang = await get_lang_cache_then_db(db, redis, tg_id)
     if lang:
         await message.answer(t(lang, "greeting"))
         return
 
-    # 2) ensure user exists with default lang=en and commit immediately
-    try:
-        user_id = await ensure_user_exists(session=db, chat_id=tg_id, username=username, first_name=first_name,
-                                           is_premium=is_premium, default_lang="en")
-        await db.commit()
-        db.info["committed_by_handler"] = True
-        logger.info("start: user ensured id=%s chat_id=%s", user_id, tg_id)
-    except Exception as e:
-        logger.exception("start: ensure_user failed")
-        await message.answer("Server error, try again later.")
-        return
+    # 2) user exists in DB but language is NULL OR user not exists -> ensure user record (language NULL)
+    await ensure_user_insert_if_missing(db, tg_id, username, first_name, is_premium)
+    # commit only if session actually created & has changes
+    await safe_commit_if_needed(db)
 
-    # 3) send language keyboard (non-blocking)
-    try:
-        await message.answer(t("en", "welcome"), reply_markup=language_keyboard())
-    except Exception:
-        logger.warning("start: sending welcome failed")
+    # 3) set pending flag in redis and set FSM waiting, then ask language
+    if redis:
+        await redis_set(f"user:{tg_id}:pending_lang", "1", ex=PENDING_TTL)
+    await state.set_state(LanguageSelection.waiting)
+    await message.answer(t("en", "welcome"), reply_markup=language_keyboard())

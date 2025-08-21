@@ -25,8 +25,7 @@ class DBSessionMiddleware(BaseMiddleware):
                 return result
             # commit only if changes or in_transaction
             try:
-                has_changes = bool(session.new) or bool(session.dirty) or bool(session.deleted) or bool(
-                    session.in_transaction())
+                has_changes = bool(session.new) or bool(session.dirty) or bool(session.deleted)
             except Exception:
                 has_changes = True
             if has_changes:
