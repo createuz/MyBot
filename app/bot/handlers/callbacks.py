@@ -2,12 +2,13 @@
 from aiogram import Router
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 
-from app.bot.handlers.user_service import update_user_language
 from app.bot.translations import t
 from app.core.logger import get_logger
+from app.db.models import User
 from app.utils.db_helpers import safe_commit_if_needed
-from app.utils.redis_client import get_redis, redis_set, redis_delete
+from app.utils.redis_client import RedisManager
 from app.utils.states import LanguageSelection
 
 router = Router()
@@ -21,20 +22,27 @@ async def lang_callback(cb: CallbackQuery, state: FSMContext, **data):
     tg_id = cb.from_user.id
     lang = cb.data.split(":", 1)[1]
 
-    current_state = await state.get_state()
-    if current_state != LanguageSelection.waiting.state:
-        await cb.answer("Please use /start to change language.", show_alert=False)
+    # require waiting state
+    if await state.get_state() != LanguageSelection.waiting.state:
+        await cb.answer("Please send /start to begin.", show_alert=False)
         return
 
     # update DB language
-    await update_user_language(db, tg_id, lang)
+    try:
+        ins = pg_insert(User).values(chat_id=tg_id, language=lang).on_conflict_do_update(
+            index_elements=[User.chat_id], set_={"language": pg_insert(User).excluded.language}
+        ).returning(User.id)
+        res = await db.execute(ins)
+        _ = res.scalar_one()
+    except Exception:
+        logger.exception("lang_callback: DB update failed")
+        # continue to set redis optimistically
+
     await safe_commit_if_needed(db)
 
     # update redis and remove pending
-    redis = await get_redis()
-    if redis:
-        await redis_set(f"user:{tg_id}:lang", lang, ex=CACHE_TTL)
-        await redis_delete(f"user:{tg_id}:pending_lang")
+    await RedisManager.set(f"user:{tg_id}:lang", lang, ex=CACHE_TTL)
+    await RedisManager.delete(f"user:{tg_id}:pending")
 
     # clear state and reply
     await state.clear()

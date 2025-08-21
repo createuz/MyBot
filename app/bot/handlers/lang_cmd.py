@@ -3,10 +3,10 @@ from aiogram import Router
 from aiogram.filters.command import Command
 from aiogram.fsm.context import FSMContext
 
-from app.bot.handlers.user_service import get_lang_cache_then_db
 from app.bot.keyboards import language_keyboard
-from app.utils.redis_client import get_redis, redis_get
-from app.utils.states import LanguageSelection
+from app.core.logger import get_logger
+from app.utils.redis_client import RedisManager
+from app.utils.user_cache import get_lang_cache_then_db
 
 router = Router()
 
@@ -15,13 +15,14 @@ router = Router()
 async def lang_command(message, state: FSMContext, **data):
     db = data.get("db")
     tg_id = message.from_user.id
+    logger = get_logger(data.get("request_id"))
 
-    redis = await get_redis()
-    pending = await redis_get(f"user:{tg_id}:pending_lang") if redis else None
+    # if pending -> ask and set state
+    pending = await RedisManager.get(f"user:{tg_id}:pending")
     if pending:
-        await state.set_state(LanguageSelection.waiting)  # or import class and use .waiting
-        await message.answer("Please choose your language:", reply_markup=language_keyboard())
+        await state.set_state("LanguageSelection:waiting")
+        await message.answer("Please choose a language:", reply_markup=language_keyboard())
         return
 
-    lang = await get_lang_cache_then_db(db, redis, tg_id)
+    lang = await get_lang_cache_then_db(db, tg_id)
     await message.answer(f"Your current language: {lang or 'not set'}\nChoose new:", reply_markup=language_keyboard())

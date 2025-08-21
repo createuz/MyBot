@@ -1,82 +1,73 @@
-# app/utils/redis_client.py
+# app/utils/redis_manager.py
 from typing import Optional
-
+import asyncio
 import redis.asyncio as redis
-
-from app.core import conf
+from app.core.config import conf  # or get_settings()
 from app.core.logger import get_logger
 
 logger = get_logger()
 
-_redis: Optional[redis.Redis] = None
+class RedisManager:
+    _client: Optional[redis.Redis] = None
 
+    @classmethod
+    async def init(cls) -> Optional[redis.Redis]:
+        if cls._client:
+            return cls._client
+        url = str(conf.redis_url)
+        try:
+            cls._client = redis.from_url(url)
+            await cls._client.ping()
+            logger.info("RedisManager: initialized")
+            return cls._client
+        except Exception as e:
+            logger.warning("RedisManager: init failed: %s", e)
+            cls._client = None
+            return None
 
-async def init_redis() -> Optional[redis.Redis]:
-    global _redis
-    if _redis:
-        return _redis
-    try:
-        _redis = redis.from_url(str(conf.redis_url))
-        await _redis.ping()
-        logger.info("Redis initialized")
-        return _redis
-    except Exception as e:
-        logger.warning("Redis init failed: %s", e)
-        _redis = None
-        return None
+    @classmethod
+    def client(cls) -> Optional[redis.Redis]:
+        return cls._client
 
-
-async def get_redis() -> Optional[redis.Redis]:
-    if _redis:
-        return _redis
-    return await init_redis()
-
-
-# small helpers: return None / False on failure (handlers stay simple)
-async def redis_get(key: str) -> Optional[str]:
-    client = await get_redis()
-    if not client:
-        return None
-    try:
-        v = await client.get(key)
+    @classmethod
+    async def get(cls, key: str) -> Optional[str]:
+        c = cls.client() or await cls.init()
+        if not c:
+            return None
+        v = await c.get(key)
         if v is None:
             return None
-        if isinstance(v, bytes):
-            return v.decode()
-        return str(v)
-    except Exception as e:
-        logger.warning("redis_get error %s: %s", key, e)
-        return None
+        return v.decode() if isinstance(v, bytes) else str(v)
 
-
-async def redis_set(key: str, value: str, ex: Optional[int] = None) -> bool:
-    client = await get_redis()
-    if not client:
-        return False
-    try:
-        await client.set(key, value, ex=ex)
-        return True
-    except Exception as e:
-        logger.warning("redis_set error %s: %s", key, e)
-        return False
-
-
-async def redis_delete(*keys: str) -> bool:
-    client = await get_redis()
-    if not client:
-        return False
-    try:
-        await client.delete(*keys)
-        return True
-    except Exception as e:
-        logger.warning("redis_delete error %s: %s", keys, e)
-        return False
-
-async def close_redis():
-    global _redis
-    if _redis:
+    @classmethod
+    async def set(cls, key: str, val: str, ex: int = None) -> bool:
+        c = cls.client() or await cls.init()
+        if not c:
+            return False
         try:
-            await _redis.close()
-        except Exception:
-            logger.warning("Redis close failed")
-        _redis = None
+            await c.set(key, val, ex=ex)
+            return True
+        except Exception as e:
+            logger.warning("RedisManager.set failed %s: %s", key, e)
+            return False
+
+    @classmethod
+    async def delete(cls, *keys: str) -> bool:
+        c = cls.client() or await cls.init()
+        if not c:
+            return False
+        try:
+            await c.delete(*keys)
+            return True
+        except Exception as e:
+            logger.warning("RedisManager.delete failed %s: %s", keys, e)
+            return False
+
+    @classmethod
+    async def close(cls):
+        if cls._client:
+            try:
+                await cls._client.close()
+            except Exception:
+                logger.exception("RedisManager.close failed")
+            cls._client = None

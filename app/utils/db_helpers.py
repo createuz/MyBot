@@ -7,30 +7,30 @@ logger = get_logger()
 
 
 async def session_has_changes(session: Any) -> bool:
-    """
-    Return True if session.new/dirty/deleted present or in transaction.
-    Works with LazySessionProxy or AsyncSession.
-    """
     try:
         return bool(session.new) or bool(session.dirty) or bool(session.deleted) or bool(session.in_transaction())
     except Exception:
-        # If cannot introspect, be conservative and assume changed
         return True
 
 
 async def safe_commit_if_needed(session: Any) -> None:
     if not session:
         return
-    if not getattr(session, "session_created", True) and not getattr(session, "_session", None):
-        # no underlying session created
+    # if using LazySessionProxy, get underlying session for introspection
+    real = getattr(session, "get_underlying_session", None)
+    if real:
+        sess = session.get_underlying_session()
+    else:
+        sess = session
+    if not sess:
         return
     try:
-        if await session_has_changes(session):
-            await session.commit()
-            logger.info("DB: committed by handler/helper")
+        if await session_has_changes(sess):
+            await sess.commit()
+            logger.info("DB commit (safe_commit_if_needed)")
     except Exception:
         try:
-            await session.rollback()
-            logger.exception("DB: rollback after commit failure")
+            await sess.rollback()
+            logger.exception("DB rollback after commit error")
         except Exception:
-            logger.exception("DB: rollback failed")
+            logger.exception("DB rollback failed")
