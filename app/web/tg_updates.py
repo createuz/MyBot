@@ -29,7 +29,7 @@ async def handle_update(request: web.Request) -> web.Response:
     # secret token check
     if getattr(conf, "webhook_secret", None):
         header_token = request.headers.get("X-Telegram-Bot-Api-Secret-Token")
-        if header_token != conf.webhook_secret:
+        if header_token != conf.webhook.secret:
             req_logger.warning("tg_updates: invalid secret token")
             return web.Response(status=401, text="Unauthorized")
 

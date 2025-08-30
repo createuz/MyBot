@@ -9,15 +9,7 @@ from app.core.logger import get_logger
 logger = get_logger()
 Base = declarative_base()
 
-# Read pooling config from conf (provide sensible defaults)
-# conf should expose db_pool_min, db_pool_max, use_pgbouncer (bool)
-min_pool = int(getattr(conf, "db_pool_min", 5))
-max_overflow = int(getattr(conf, "db_pool_max", 20))
-use_pgbouncer = bool(getattr(conf, "use_pgbouncer", False))
-
-# If using PgBouncer in transaction pooling mode -> use NullPool to avoid SQLAlchemy holding
-# server-side connections across transactions.
-if use_pgbouncer:
+if conf.db.use_pgbouncer:
     poolclass = NullPool
     logger.info("Using NullPool because use_pgbouncer=True (recommended for transaction pooling)")
     engine = create_async_engine(
@@ -28,17 +20,15 @@ if use_pgbouncer:
         poolclass=poolclass,
     )
 else:
-    # Normal SQLAlchemy pooling (QueuePool) with pool_size and max_overflow
     engine = create_async_engine(
         conf.database_url,
         echo=False,
         future=True,
         pool_pre_ping=True,
-        pool_size=min_pool,
-        max_overflow=max_overflow,
+        pool_size=conf.db.pool_min,
+        max_overflow=conf.db.pool_max,
     )
 
-# Session maker
 AsyncSessionLocal = async_sessionmaker(bind=engine, class_=AsyncSession, expire_on_commit=False, autoflush=False)
 
 

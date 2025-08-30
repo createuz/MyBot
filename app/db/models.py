@@ -3,10 +3,9 @@ from datetime import datetime, timezone
 from typing import Optional
 
 from sqlalchemy import String, Integer, BigInteger, Boolean, DateTime
-from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import Mapped, mapped_column
 
-Base = declarative_base()
+from app.db.session import Base
 
 
 def utc_now():

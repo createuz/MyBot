@@ -1,63 +1,161 @@
+# import asyncio
+# import signal
+# from typing import Optional
+#
+# from aiogram import Bot, Dispatcher
+# from aiogram.client.default import DefaultBotProperties
+# from aiogram.enums import ParseMode
+#
+# from app.bot.handlers import callbacks as callbacks_pkg
+# from app.bot.handlers import lang_cmd as lang_cmd_pkg
+# from app.bot.handlers import start as start_handler_pkg
+# from app.bot.middlewares.db_middleware import DBSessionMiddleware
+# from app.bot.middlewares.request_id_middleware import RequestIDMiddleware
+# from app.core.config import conf
+# from app.core.logger import get_logger
+# from app.db.session import init_db, dispose_db
+# from app.utils.redis_client import RedisManager
+#
+# logger = get_logger()
+#
+#
+# async def create_bot_and_dispatcher() -> tuple[Bot, Dispatcher]:
+#     bot: Bot = Bot(token=conf.bot.token, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
+#
+#     dp = Dispatcher()
+#     dp.update.outer_middleware(RequestIDMiddleware())
+#     dp.update.outer_middleware(DBSessionMiddleware())
+#     dp.include_router(start_handler_pkg.router)
+#     dp.include_router(callbacks_pkg.router)
+#     dp.include_router(lang_cmd_pkg.router)
+#
+#     return bot, dp
+#
+#
+# async def startup_sequence(bot: Bot, dp: Dispatcher) -> None:
+#     logger.info("Startup: initializing Redis")
+#     await  RedisManager.init()
+#     logger.info("Startup: initializing DB (create tables if needed)")
+#     await init_db()
+#     logger.info("Startup finished")
+#
+#
+# async def shutdown_sequence(bot: Bot, dp: Dispatcher) -> None:
+#     logger.info("Shutdown: closing dispatcher storage")
+#     try:
+#         await dp.storage.close()
+#     except Exception:
+#         logger.exception("Error closing dispatcher storage")
+#
+#     logger.info("Shutdown: closing bot session")
+#     try:
+#         await bot.session.close()
+#     except Exception:
+#         logger.exception("Error closing bot.session")
+#
+#     logger.info("Shutdown: closing Redis")
+#     try:
+#         await RedisManager.close()
+#     except Exception:
+#         logger.exception("Error closing RedisManager")
+#
+#     logger.info("Shutdown: disposing DB engine")
+#     try:
+#         await dispose_db()
+#     except Exception:
+#         logger.exception("Error disposing DB engine")
+#
+#     logger.info("Shutdown finished")
+#
+#
+# async def run_polling() -> None:
+#     bot: Optional[Bot] = None
+#     dp: Optional[Dispatcher] = None
+#     bot, dp = await create_bot_and_dispatcher()
+#
+#     try:
+#         await startup_sequence(bot, dp)
+#     except Exception:
+#         logger.exception("Startup sequence failed — stopping")
+#         await shutdown_sequence(bot, dp)
+#         return
+#
+#     loop = asyncio.get_running_loop()
+#     stop_event = asyncio.Event()
+#
+#     def _stop_on_signal():
+#         logger.info("Shutdown signal received")
+#         stop_event.set()
+#
+#     for sig in (signal.SIGINT, signal.SIGTERM):
+#         try:
+#             loop.add_signal_handler(sig, _stop_on_signal)
+#         except NotImplementedError:
+#             pass
+#
+#     polling_task = asyncio.create_task(dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types()))
+#
+#     done, pending = await asyncio.wait([polling_task, stop_event.wait()], return_when=asyncio.FIRST_COMPLETED)
+#
+#     if not polling_task.done():
+#         logger.info("Stopping polling...")
+#         try:
+#             await dp.stop_polling()
+#         except Exception:
+#             logger.exception("Error while stopping polling")
+#
+#     try:
+#         await polling_task
+#     except asyncio.CancelledError:
+#         pass
+#     except Exception:
+#         logger.exception("Polling task ended with exception")
+#
+#     await shutdown_sequence(bot, dp)
+#
+#
+# def main() -> None:
+#     try:
+#         asyncio.run(run_polling())
+#     except KeyboardInterrupt:
+#         logger.info("Keyboard interrupt — exit")
+#     except Exception as e:
+#         logger.exception("Fatal error in main: %s", e)
+#
+#
+# if __name__ == "__main__":
+#     main()
 # main.py
-"""
-Entrypoint for the bot using:
- - aiogram 3.22.x
- - LazySessionProxy + DBSessionMiddleware pattern
- - RedisManager singleton
- - init_db() / dispose_db() from app.db.session
-
-How it works:
-1) create Bot + Dispatcher
-2) include routers (handlers)
-3) register outer middlewares:
-     - RequestIDMiddleware (assigns request_id to data)
-     - DBSessionMiddleware (provides LazySessionProxy as data["db"])
-   (Order matters: RequestID must run before DB middleware so logs have request_id)
-4) init Redis and DB before polling
-5) start polling; on exit do graceful cleanup
-"""
-
 import asyncio
 import signal
 from typing import Optional
 
 from aiogram import Bot, Dispatcher
+from aiogram.client.default import DefaultBotProperties
+from aiogram.enums import ParseMode
 
 from app.bot.handlers import callbacks as callbacks_pkg
 from app.bot.handlers import lang_cmd as lang_cmd_pkg
-# routers (make sure these modules exist and export `router`)
 from app.bot.handlers import start as start_handler_pkg
 from app.bot.middlewares.db_middleware import DBSessionMiddleware
-# middlewares
 from app.bot.middlewares.request_id_middleware import RequestIDMiddleware
-# app config & logging
 from app.core.config import conf
 from app.core.logger import get_logger
-# DB init/dispose
 from app.db.session import init_db, dispose_db
-from app.utils.redis_client import RedisManager
-
-# Redis manager
+from app.utils.redis_client import RedisManager  # keep your actual module name here
 
 logger = get_logger()
 
 
 async def create_bot_and_dispatcher() -> tuple[Bot, Dispatcher]:
-    """
-    Create Bot and Dispatcher, register routers and middlewares.
-    """
-    # create bot
-    bot = Bot(token=conf.bot_token, parse_mode="HTML")
+    bot: Bot = Bot(token=conf.bot.token, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
 
-    # create dispatcher
     dp = Dispatcher()
-
-    # Register outer middlewares: RequestID first, DB session next
+    # middlewares: RequestID first, then DB session
     dp.update.outer_middleware(RequestIDMiddleware())
     dp.update.outer_middleware(DBSessionMiddleware())
 
-    # Include routers (handlers)
-    # these modules must expose `router = Router()` as we added in patches
+    # include routers
     dp.include_router(start_handler_pkg.router)
     dp.include_router(callbacks_pkg.router)
     dp.include_router(lang_cmd_pkg.router)
@@ -66,24 +164,14 @@ async def create_bot_and_dispatcher() -> tuple[Bot, Dispatcher]:
 
 
 async def startup_sequence(bot: Bot, dp: Dispatcher) -> None:
-    """
-    Run initialization steps: redis, db etc.
-    Called once before starting polling.
-    """
     logger.info("Startup: initializing Redis")
-    await  RedisManager.init()  # best-effort; returns None if cannot connect
-
+    await RedisManager.init()
     logger.info("Startup: initializing DB (create tables if needed)")
     await init_db()
-
-    # optional: any other on-start steps can go here
     logger.info("Startup finished")
 
 
 async def shutdown_sequence(bot: Bot, dp: Dispatcher) -> None:
-    """
-    Graceful shutdown: close storage, bot session, redis, db engine.
-    """
     logger.info("Shutdown: closing dispatcher storage")
     try:
         await dp.storage.close()
@@ -112,26 +200,17 @@ async def shutdown_sequence(bot: Bot, dp: Dispatcher) -> None:
 
 
 async def run_polling() -> None:
-    """
-    High-level runner: create bot/dispatcher, init resources, start polling,
-    and ensure graceful shutdown on exit.
-    """
     bot: Optional[Bot] = None
     dp: Optional[Dispatcher] = None
-
-    # Create and wire bot + dispatcher
     bot, dp = await create_bot_and_dispatcher()
 
-    # Run startup sequence
     try:
         await startup_sequence(bot, dp)
     except Exception:
         logger.exception("Startup sequence failed — stopping")
-        # If critical startup fails, try shutdown and exit
         await shutdown_sequence(bot, dp)
         return
 
-    # Handle signals in Windows/Unix
     loop = asyncio.get_running_loop()
     stop_event = asyncio.Event()
 
@@ -143,44 +222,44 @@ async def run_polling() -> None:
         try:
             loop.add_signal_handler(sig, _stop_on_signal)
         except NotImplementedError:
-            # add_signal_handler may not be available on Windows asyncio loop
+            # Windows asyncio may not support add_signal_handler
             pass
 
-    # Start polling in background task so we can also wait for signals
-    polling_task = asyncio.create_task(
-        dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types())
-    )
+    # start polling as a task
+    await bot.delete_webhook(drop_pending_updates=True)
+    polling_task = asyncio.create_task(dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types()))
 
-    # Wait for either polling ends (error) or signal
-    done, pending = await asyncio.wait(
-        [polling_task, stop_event.wait()],
-        return_when=asyncio.FIRST_COMPLETED,
-    )
+    # *** IMPORTANT FIX: create a task for stop_event.wait() instead of passing the coroutine directly
+    stop_task = asyncio.create_task(stop_event.wait())
 
-    # If stop_event triggered, gracefully stop dispatcher polling
-    if not polling_task.done():
-        logger.info("Stopping polling...")
-        try:
-            await dp.stop_polling()
-        except Exception:
-            logger.exception("Error while stopping polling")
-
-    # Ensure polling_task finished
     try:
-        await polling_task
-    except asyncio.CancelledError:
-        pass
-    except Exception:
-        logger.exception("Polling task ended with exception")
+        # wait until either polling ends or stop_event is set
+        done, pending = await asyncio.wait([polling_task, stop_task], return_when=asyncio.FIRST_COMPLETED)
+    finally:
+        # Graceful stop: ensure polling is stopped
+        if not polling_task.done():
+            logger.info("Stopping polling...")
+            try:
+                await dp.stop_polling()
+            except Exception:
+                logger.exception("Error while stopping polling")
 
-    # Shutdown sequence
+        # cancel any still-pending tasks
+        for t in (polling_task, stop_task):
+            if not t.done():
+                t.cancel()
+                try:
+                    await t
+                except asyncio.CancelledError:
+                    pass
+                except Exception:
+                    logger.exception("Task cancel/wait error")
+
+    # shutdown sequence
     await shutdown_sequence(bot, dp)
 
 
 def main() -> None:
-    """
-    Entrypoint called when running python main.py
-    """
     try:
         asyncio.run(run_polling())
     except KeyboardInterrupt:

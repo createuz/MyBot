@@ -24,7 +24,7 @@ def setup_logger(level: int = logging.INFO) -> FilteringBoundLogger:
                         wrapper_class=structlog.make_filtering_bound_logger(level),
                         logger_factory=structlog.PrintLoggerFactory())
     # reduce SQLAlchemy noise by default
-    logging.getLogger("sqlalchemy.engine").setLevel(logging.WARNING)
+    # logging.getLogger("sqlalchemy.engine").setLevel(logging.WARNING)
     return structlog.get_logger()
 
 

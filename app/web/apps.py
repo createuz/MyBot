@@ -5,7 +5,7 @@ from aiohttp import web
 from app.core.logger import get_logger
 # DB / Redis helpers
 from app.db.session import init_db, dispose_db
-from app.utils.redis_client import init_redis, close_redis
+from app.utils.redis_client import RedisManager
 from app.web.health import register as register_health
 from app.web.metrics import register as register_metrics
 from app.web.middlewares import request_id_middleware
@@ -14,17 +14,15 @@ from app.web.tg_updates import tg_updates_app
 DEFAULT_SUBAPPS = (
     ("/tg/webhooks/", tg_updates_app),
 )
-
+redis_manager = RedisManager()
 
 async def aiohttp_on_startup(app: web.Application) -> None:
     logger = get_logger()
     dp = app["dp"]
     bot = app.get("bot")
     logger.info("aiohttp_on_startup: init redis & db")
-    # init redis and db (idempotent)
-    await init_redis()
+    await redis_manager.init()
     await init_db()
-    # emit dispatcher startup so handlers can run their startup hooks
     workflow_data = {"app": app, "dispatcher": dp}
     if bot is not None:
         workflow_data["bot"] = bot
@@ -67,7 +65,7 @@ async def aiohttp_on_shutdown(app: web.Application) -> None:
 
     # close redis and dispose db
     try:
-        await close_redis()
+        await redis_manager.close()
     except Exception:
         logger.warning("close_redis failed")
     try:
