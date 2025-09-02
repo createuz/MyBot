@@ -13,6 +13,7 @@ from app.utils.user_service import upsert_user_language
 router = Router()
 
 
+@router.callback_query(lambda c: c.data and c.data.startswith("lang:"), state=LanguageSelection.select_language)
 @router.callback_query(
     StateFilter(LanguageSelection.select_language),
     F.data.startswith("lang:")
