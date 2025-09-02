@@ -5,7 +5,7 @@ from aiogram.fsm.context import FSMContext
 
 from app.bot.keyboards import language_keyboard
 from app.core.logger import get_logger
-from app.utils.redis_client import RedisManager
+from app.utils.redis_manager import RedisManager
 from app.utils.user_cache import get_lang_cache_then_db
 
 router = Router()

@@ -5,7 +5,7 @@ from sqlalchemy import select
 
 from app.core.logger import get_logger
 from app.db.models import User
-from app.utils.redis_client import RedisManager
+from app.utils.redis_manager import RedisManager
 
 logger = get_logger()
 CACHE_TTL = 7 * 24 * 3600  # 7 days

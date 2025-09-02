@@ -14,7 +14,7 @@ from app.bot.middlewares.request_id_middleware import RequestIDMiddleware
 from app.core.config import conf
 from app.core.logger import get_logger
 from app.db.session import init_db, dispose_db
-from app.utils.redis_client import RedisManager  # keep your actual module name here
+from app.utils.redis_manager import RedisManager  # keep your actual module name here
 
 logger = get_logger()
 

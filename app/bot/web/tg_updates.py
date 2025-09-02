@@ -7,7 +7,7 @@ from aiohttp import web
 
 from app.core.config import conf
 from app.core.logger import get_logger
-from app.web.metrics import WEBHOOK_UPDATES, REQUESTS, REQUEST_LATENCY
+from app.bot.web.metrics import WEBHOOK_UPDATES, REQUESTS, REQUEST_LATENCY
 
 
 def tg_updates_app() -> web.Application:

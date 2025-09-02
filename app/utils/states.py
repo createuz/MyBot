@@ -3,4 +3,4 @@ from aiogram.fsm.state import StatesGroup, State
 
 
 class LanguageSelection(StatesGroup):
-    waiting = State()
+    select_language = State()

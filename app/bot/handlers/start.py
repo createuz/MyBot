@@ -1,65 +1,57 @@
 # app/bot/handlers/start.py
 from aiogram import Router
-from aiogram.filters.command import Command
+from aiogram.filters import StateFilter
+from aiogram.filters.command import CommandStart, Command
 from aiogram.fsm.context import FSMContext
-from sqlalchemy.dialects.postgresql import insert as pg_insert
+from aiogram.types import Message
 
+from app.core.logger import get_logger
+from app.utils.user_service import get_lang_cache_then_db, ensure_user_exists
+from app.utils.redis_manager import RedisManager
 from app.bot.keyboards import language_keyboard
 from app.bot.translations import t
-from app.core.logger import get_logger
-from app.db.models import User
-from app.utils.db_helpers import safe_commit_if_needed
-from app.utils.redis_client import RedisManager
-from app.utils.states import LanguageSelection
-from app.utils.user_cache import get_lang_cache_then_db
+from app.utils.states import LanguageSelection  # define FSM states module
 
 router = Router()
-PENDING_TTL = 24 * 3600
 
-
-@router.message(Command("start"))
-async def start_handler(message, state: FSMContext, **data):
-    db = data.get("db")  # LazySessionProxy
-    logger = get_logger(data.get("request_id"))
+@router.message(CommandStart(), StateFilter('*'))
+async def start_handler(message: Message, state: FSMContext, **data):
+    db = data.get("db")
+    request_id = data.get("request_id")
+    logger = get_logger(request_id)
     tg_id = message.from_user.id
     username = message.from_user.username
     first_name = message.from_user.first_name
     is_premium = getattr(message.from_user, "is_premium", False)
 
-    # clear any previous FSM
+    # clear any existing state
     await state.clear()
 
-    # 1) redis-first -> db fallback
-    lang = await get_lang_cache_then_db(db, tg_id)
+    # get redis client
+    redis = RedisManager.client()
+
+    # 1) check cache -> db
+    lang = await get_lang_cache_then_db(session=db, redis_client=redis, chat_id=tg_id)
     if lang:
         await message.answer(t(lang, "greeting"))
         return
 
-    # 2) No confirmed language -> ensure DB user row exists (language stays NULL)
+    # 2) not found: ensure user exists in DB with language = None
     try:
-        ins = pg_insert(User).values(
-            chat_id=tg_id,
-            username=username,
-            first_name=first_name,
-            is_premium=is_premium,
-            language=None
-        ).on_conflict_do_update(
-            index_elements=[User.chat_id],
-            set_={
-                "username": pg_insert(User).excluded.username,
-                "first_name": pg_insert(User).excluded.first_name,
-                "is_premium": pg_insert(User).excluded.is_premium,
-            }
-        ).returning(User.id)
-        res = await db.execute(ins)
-        _ = res.scalar_one()
+        user_id = await ensure_user_exists(session=db, chat_id=tg_id, username=username,
+                                           first_name=first_name, is_premium=is_premium,
+                                           default_lang=None)
+        # we want immediate persistence for new user so middleware will commit automatically
+        # set flag so middleware won't double-commit (optional)
+        if db.session_created:
+            db.info["committed_by_handler"] = False  # do not signal commit yet; middleware will commit if needed
+        logger.info("start: ensured user id=%s chat_id=%s", user_id, tg_id)
     except Exception:
-        logger.exception("start: ensure user insert/update failed")
+        logger.exception("start: ensure_user failed")
+        await message.answer("Server error, try again later.")
+        return
 
-    # commit only if session created & has changes
-    await safe_commit_if_needed(db)
-
-    # 3) set pending flag in redis + FSM waiting + ask language
-    await RedisManager.set(f"user:{tg_id}:pending", "1", ex=PENDING_TTL)
-    await state.set_state(LanguageSelection.waiting)
-    await message.answer(t("en", "welcome"), reply_markup=language_keyboard())
+    # 3) ask language (set FSM to wait)
+    await message.answer(t("en", "welcome"), reply_markup=language_keyboard())  # text in english by default
+    await state.set_state(LanguageSelection.select_language)
+    await state.update_data(added_by=None)  # preserve ref if needed

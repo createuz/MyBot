@@ -5,11 +5,11 @@ from aiohttp import web
 from app.core.logger import get_logger
 # DB / Redis helpers
 from app.db.session import init_db, dispose_db
-from app.utils.redis_client import RedisManager
-from app.web.health import register as register_health
-from app.web.metrics import register as register_metrics
-from app.web.middlewares import request_id_middleware
-from app.web.tg_updates import tg_updates_app
+from app.utils.redis_manager import RedisManager
+from app.bot.web.health import register as register_health
+from app.bot.web.metrics import register as register_metrics
+from app.bot.web.middlewares import request_id_middleware
+from app.bot.web.tg_updates import tg_updates_app
 
 DEFAULT_SUBAPPS = (
     ("/tg/webhooks/", tg_updates_app),
