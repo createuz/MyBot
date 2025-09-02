@@ -5,11 +5,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 
 class LazySessionProxy:
-    """
-    Delayed AsyncSession creator. Creates AsyncSession only when first used.
-    Exposes `.info` property so handlers can set flags (like committed_by_handler).
-    """
-
     def __init__(self, session_maker: Callable[..., AsyncSession]):
         self._maker = session_maker
         self._session: Optional[AsyncSession] = None
@@ -17,7 +12,6 @@ class LazySessionProxy:
 
     def _ensure(self) -> AsyncSession:
         if not self._session:
-            # session_maker is a factory (async_sessionmaker) which returns AsyncSession
             self._session = self._maker()
             self.session_created = True
         return self._session
@@ -25,20 +19,19 @@ class LazySessionProxy:
     def get_underlying_session(self) -> Optional[AsyncSession]:
         return self._session
 
-    # expose info dict (this will create session on first access)
     @property
     def info(self) -> dict:
-        sess = self._ensure()
-        return sess.info
+        return self._ensure().info
 
-    # delegate key async methods
     async def execute(self, *args, **kwargs):
-        sess = self._ensure()
-        return await sess.execute(*args, **kwargs)
+        return await self._ensure().execute(*args, **kwargs)
+
+    async def scalar_one(self, *args, **kwargs):
+        res = await self.execute(*args, **kwargs)
+        return res.scalar_one()
 
     async def scalar_one_or_none(self, *args, **kwargs):
-        sess = self._ensure()
-        res = await sess.execute(*args, **kwargs)
+        res = await self.execute(*args, **kwargs)
         return res.scalars().first()
 
     async def commit(self):

@@ -1,0 +1,35 @@
+version: "3.8"
+services:
+  postgres:
+    image: postgres:15
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: example
+      POSTGRES_DB: mybot
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
+  redis:
+    image: redis:7
+    command: [ "redis-server", "--save", "60", "1" ]
+    ports:
+      - "6379:6379"
+    volumes:
+      - redisdata:/data
+
+  bot:
+    build: .
+    env_file: .env
+    depends_on:
+      - redis
+      - postgres
+    volumes:
+      - ./:/app
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  redisdata:

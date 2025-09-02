@@ -1,26 +1,31 @@
 # app/utils/redis_manager.py
-import asyncio
-from typing import Optional
-from redis.asyncio import Redis, from_url
+from redis.asyncio import from_url, Redis
+
 from app.core.config import conf
 from app.core.logger import get_logger
 
 logger = get_logger()
 
+
 class RedisManager:
-    _client: Optional[Redis] = None
+    _client: Redis | None = None
 
     @classmethod
     async def init(cls):
         if cls._client:
             return cls._client
-        cls._client = from_url(conf.redis_url, decode_responses=False)
+        url = conf.redis.url_or_build()
+        cls._client = from_url(url, decode_responses=False)
         try:
             await cls._client.ping()
-            logger.info("RedisManager: initialized")
+            logger.info("Redis client initialized")
         except Exception:
-            logger.exception("RedisManager: failed to ping redis")
+            logger.exception("Redis init failed")
             raise
+        return cls._client
+
+    @classmethod
+    def client(cls) -> Redis | None:
         return cls._client
 
     @classmethod
@@ -29,10 +34,6 @@ class RedisManager:
             try:
                 await cls._client.close()
             except Exception:
-                logger.exception("RedisManager close failed")
+                logger.exception("Redis close failed")
             cls._client = None
-            logger.info("RedisManager: closed")
-
-    @classmethod
-    def client(cls) -> Optional[Redis]:
-        return cls._client
+            logger.info("Redis closed")

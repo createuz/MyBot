@@ -24,7 +24,7 @@ async def redis_get_lang(redis_client, chat_id: int) -> Optional[str]:
             return val.decode("utf-8", errors="ignore")
         return str(val)
     except Exception as e:
-        logger.warning("redis_get_lang error for %s: %s", chat_id, e)
+        logger.warning("redis_get_lang error %s: %s", chat_id, e)
         return None
 
 
@@ -34,38 +34,30 @@ async def db_get_lang(session, chat_id: int) -> Optional[str]:
         user = res.scalars().first()
         if not user:
             return None
-        return user.language  # may be None
+        return user.language
     except Exception as e:
         logger.exception("DB read error for %s: %s", chat_id, e)
         return None
 
 
 async def get_lang_cache_then_db(session, redis_client, chat_id: int) -> Optional[str]:
-    # 1) Redis
     lang = await redis_get_lang(redis_client, chat_id)
     if lang:
-        logger.debug("get_lang: redis hit %s -> %s", chat_id, lang)
+        logger.debug("redis hit %s -> %s", chat_id, lang)
         return lang
-
-    # 2) DB
     lang = await db_get_lang(session, chat_id)
     if lang:
-        # best-effort cache
         try:
             if redis_client is not None:
                 await redis_client.set(f"user:{chat_id}:lang", lang, ex=CACHE_TTL)
         except Exception:
-            logger.warning("get_lang: redis set failed")
+            logger.warning("redis set failed for %s", chat_id)
     return lang
 
 
 async def ensure_user_exists(session, chat_id: int, username: Optional[str], first_name: Optional[str],
                              is_premium: Optional[bool], default_lang: Optional[str] = None,
                              added_by: Optional[str] = None) -> int:
-    """
-    Create or update user, but DO NOT force language to 'en' — keep None if default_lang is None.
-    This function does NOT commit; caller/middleware should commit. Returns user.id
-    """
     try:
         ins = pg_insert(User).values(
             chat_id=chat_id,
@@ -73,9 +65,8 @@ async def ensure_user_exists(session, chat_id: int, username: Optional[str], fir
             first_name=first_name,
             is_premium=is_premium,
             language=default_lang,
-            added_by=added_by,
+            added_by=added_by
         )
-
         stmt = ins.on_conflict_do_update(
             index_elements=[User.chat_id],
             set_={
@@ -84,7 +75,6 @@ async def ensure_user_exists(session, chat_id: int, username: Optional[str], fir
                 "is_premium": ins.excluded.is_premium,
             }
         ).returning(User.id)
-
         res = await session.execute(stmt)
         user_id = res.scalar_one()
         logger.info("ensure_user_exists: chat_id=%s id=%s", chat_id, user_id)
@@ -95,14 +85,8 @@ async def ensure_user_exists(session, chat_id: int, username: Optional[str], fir
 
 
 async def upsert_user_language(session, chat_id: int, language: str) -> int:
-    """
-    Update only language field (upsert). Caller should commit or set session.info flag.
-    """
     try:
-        ins = pg_insert(User).values(
-            chat_id=chat_id,
-            language=language,
-        )
+        ins = pg_insert(User).values(chat_id=chat_id, language=language)
         stmt = ins.on_conflict_do_update(
             index_elements=[User.chat_id],
             set_={"language": ins.excluded.language}

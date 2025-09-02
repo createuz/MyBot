@@ -9,19 +9,30 @@ from app.core.logger import get_logger
 logger = get_logger()
 Base = declarative_base()
 
+# build engine with pool sizing (or advise using PgBouncer)
+# _engine = create_async_engine(
+#     conf.db.sqlalchemy_url(),
+#     echo=False,
+#     future=True,
+#     pool_pre_ping=True,
+#     # tune pool via pool_size & max_overflow if not using PgBouncer.
+#     pool_size=conf.db.pool_min,
+#     max_overflow=conf.db.pool_max,
+# )
+
 if conf.db.use_pgbouncer:
     poolclass = NullPool
     logger.info("Using NullPool because use_pgbouncer=True (recommended for transaction pooling)")
-    engine = create_async_engine(
-        conf.database_url,
+    _engine = create_async_engine(
+        conf.db.sqlalchemy_url(),
         echo=False,
         future=True,
         pool_pre_ping=True,
         poolclass=poolclass,
     )
 else:
-    engine = create_async_engine(
-        conf.database_url,
+    _engine = create_async_engine(
+        conf.db.sqlalchemy_url(),
         echo=False,
         future=True,
         pool_pre_ping=True,
@@ -29,15 +40,15 @@ else:
         max_overflow=conf.db.pool_max,
     )
 
-AsyncSessionLocal = async_sessionmaker(bind=engine, class_=AsyncSession, expire_on_commit=False, autoflush=False)
+AsyncSessionLocal = async_sessionmaker(bind=_engine, class_=AsyncSession, expire_on_commit=False, autoflush=False)
 
 
 async def init_db():
-    async with engine.begin() as conn:
+    async with _engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     logger.info("Database initialized")
 
 
 async def dispose_db():
-    await engine.dispose()
+    await _engine.dispose()
     logger.info("Database disposed")
