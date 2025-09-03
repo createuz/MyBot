@@ -26,21 +26,22 @@ async def start_handler(message: Message, state: FSMContext, **data):
 
     await state.clear()
     redis = RedisManager.client()
-
     lang = await get_lang_cache_then_db(session=db, redis_client=redis, chat_id=tg_id)
     if lang:
-        await message.answer(t(lang, "greeting"))
-        return
-
+        return await message.answer(t(lang, "greeting"))
     try:
-        user_id = await ensure_user_exists(session=db, chat_id=tg_id, username=username,
-                                           first_name=first_name, is_premium=is_premium,
-                                           default_lang=None)
+        user_id = await ensure_user_exists(
+            session=db,
+            chat_id=tg_id,
+            username=username,
+            first_name=first_name,
+            is_premium=is_premium,
+            default_lang=None
+        )
         logger.info("start: ensured user id=%s chat_id=%s", user_id, tg_id)
     except Exception:
         logger.exception("start: ensure_user failed")
-        await message.answer("Server error, try again later.")
-        return
+        return await message.answer("Server error, try again later.")
 
     await message.answer(t("en", "welcome"), reply_markup=language_keyboard())
-    await state.set_state(LanguageSelection.select_language)
+    return await state.set_state(LanguageSelection.select_language)

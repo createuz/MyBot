@@ -34,42 +34,6 @@ async def startup(bot, dp):
     logger.info("startup finished")
 
 
-# async def startup_sequence(bot: Bot, dp: Dispatcher) -> None:
-#     logger.info("Startup: initializing Redis")
-#     await RedisManager.init()
-#     logger.info("Startup: initializing DB (create tables if needed)")
-#     await init_db()
-#     logger.info("Startup finished")
-
-
-# async def shutdown_sequence(bot: Bot, dp: Dispatcher) -> None:
-#     logger.info("Shutdown: closing dispatcher storage")
-#     try:
-#         await dp.storage.close()
-#     except Exception:
-#         logger.exception("Error closing dispatcher storage")
-#
-#     logger.info("Shutdown: closing bot session")
-#     try:
-#         await bot.session.close()
-#     except Exception:
-#         logger.exception("Error closing bot.session")
-#
-#     logger.info("Shutdown: closing Redis")
-#     try:
-#         await RedisManager.close()
-#     except Exception:
-#         logger.exception("Error closing RedisManager")
-#
-#     logger.info("Shutdown: disposing DB engine")
-#     try:
-#         await dispose_db()
-#     except Exception:
-#         logger.exception("Error disposing DB engine")
-#
-#     logger.info("Shutdown finished")
-
-
 async def shutdown(bot, dp):
     try:
         await dp.storage.close()

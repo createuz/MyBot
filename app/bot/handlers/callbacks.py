@@ -20,10 +20,8 @@ async def lang_callback(call: CallbackQuery, state: FSMContext, **data):
     redis = RedisManager.client()
     lang = call.data.split(":", 1)[1]
     tg_id = call.from_user.id
-
     try:
         user_id = await upsert_user_language(session=db, chat_id=tg_id, language=lang)
-        # if session created, mark and commit
         if db.session_created:
             db.info["committed_by_handler"] = True
             await db.commit()
