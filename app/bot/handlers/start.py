@@ -23,7 +23,6 @@ async def start_handler(message: Message, state: FSMContext, **data):
     username = message.from_user.username
     first_name = message.from_user.first_name
     is_premium = getattr(message.from_user, "is_premium", False)
-
     await state.clear()
     redis = RedisManager.client()
     lang = await get_lang_cache_then_db(session=db, redis_client=redis, chat_id=tg_id)
@@ -38,10 +37,17 @@ async def start_handler(message: Message, state: FSMContext, **data):
             is_premium=is_premium,
             default_lang=None
         )
+        if getattr(db, "session_created", False):
+            db.info["committed_by_handler"] = True
+            await db.commit()
         logger.info("start: ensured user id=%s chat_id=%s", user_id, tg_id)
     except Exception:
         logger.exception("start: ensure_user failed")
+        try:
+            if getattr(db, "session_created", False):
+                await db.rollback()
+        except Exception:
+            logger.exception("start: rollback failed")
         return await message.answer("Server error, try again later.")
-
     await message.answer(t("en", "welcome"), reply_markup=language_keyboard())
     return await state.set_state(LanguageSelection.select_language)

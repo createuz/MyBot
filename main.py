@@ -1,5 +1,6 @@
 # main.py
 import asyncio
+import logging
 import signal
 
 from aiogram import Bot, Dispatcher
@@ -8,6 +9,7 @@ from aiogram.enums import ParseMode
 
 from app.bot.handlers import start as start_pkg, callbacks as cb_pkg, lang_cmd as lang_pkg
 from app.bot.middlewares.db_middleware import DBSessionMiddleware
+from app.bot.middlewares.middleware import ChatLoggerMiddleware
 from app.bot.middlewares.request_id_middleware import RequestIDMiddleware
 from app.core.config import conf
 from app.core.logger import get_logger
@@ -22,6 +24,7 @@ async def create_bot_and_dp():
     dp = Dispatcher()
     dp.update.outer_middleware(RequestIDMiddleware())
     dp.update.outer_middleware(DBSessionMiddleware())
+    dp.update.outer_middleware(ChatLoggerMiddleware(logger=logger))
     dp.include_router(start_pkg.router)
     dp.include_router(cb_pkg.router)
     dp.include_router(lang_pkg.router)
@@ -65,7 +68,8 @@ async def run_polling():
         except NotImplementedError:
             pass
 
-    polling_task = asyncio.create_task(dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types()))
+    polling_task = asyncio.create_task(
+        dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types(), drop_pending_updates=True))
     stop_task = asyncio.create_task(stop_event.wait())
 
     done, pending = await asyncio.wait([polling_task, stop_task], return_when=asyncio.FIRST_COMPLETED)

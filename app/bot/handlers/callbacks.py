@@ -22,13 +22,13 @@ async def lang_callback(call: CallbackQuery, state: FSMContext, **data):
     tg_id = call.from_user.id
     try:
         user_id = await upsert_user_language(session=db, chat_id=tg_id, language=lang)
-        if db.session_created:
+        if getattr(db, "session_created", False):
             db.info["committed_by_handler"] = True
             await db.commit()
         logger.info("lang_callback: upserted id=%s chat_id=%s lang=%s", user_id, tg_id, lang)
     except Exception:
         try:
-            if db.session_created:
+            if getattr(db, "session_created", False):
                 await db.rollback()
         except Exception:
             logger.exception("rollback failed")

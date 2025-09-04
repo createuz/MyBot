@@ -9,7 +9,7 @@ from app.core.logger import get_logger
 
 class RequestIDMiddleware(BaseMiddleware):
     async def __call__(self, handler: Callable[[Any, dict], Awaitable[Any]], event: Any, data: dict):
-        rid = uuid.uuid4().hex
+        rid = uuid.uuid4().hex[:16]
         data["request_id"] = rid
         # data["logger"] = get_logger(rid)
         return await handler(event, data)
