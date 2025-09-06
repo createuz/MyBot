@@ -43,13 +43,15 @@ async def db_get_lang(session, chat_id: int) -> Optional[str]:
 async def get_lang_cache_then_db(session, redis_client, chat_id: int) -> Optional[str]:
     lang = await redis_get_lang(redis_client, chat_id)
     if lang:
-        logger.debug("redis hit %s -> %s", chat_id, lang)
+        logger.info("redis hit %s -> %s", chat_id, lang)
         return lang
     lang = await db_get_lang(session, chat_id)
     if lang:
+        logger.info("DB hit %s -> %s", chat_id, lang)
         try:
             if redis_client is not None:
                 await redis_client.set(f"user:{chat_id}:lang", lang, ex=CACHE_TTL)
+                logger.info("redis set %s -> %s", chat_id, lang)
         except Exception:
             logger.warning("redis set failed for %s", chat_id)
     return lang
@@ -94,6 +96,11 @@ async def ensure_user_exists(session, chat_id: int, username: Optional[str], fir
         ).returning(User.id)
 
         res = await session.execute(stmt)
+        # mark that we performed a write
+        try:
+            session.info["writes"] = True
+        except Exception:
+            pass
         user_id = res.scalar_one()
         logger.info("ensure_user_exists: inserted chat_id=%s id=%s", chat_id, user_id)
         return user_id
@@ -118,6 +125,11 @@ async def upsert_user_language(session, chat_id: int, language: str) -> int:
             set_={"language": ins.excluded.language}
         ).returning(User.id)
         res = await session.execute(stmt)
+        # mark write
+        try:
+            session.info["writes"] = True
+        except Exception:
+            pass
         user_id = res.scalar_one()
         logger.info("upsert_user_language: inserted (fallback) chat_id=%s id=%s lang=%s", chat_id, user_id, language)
         return user_id
