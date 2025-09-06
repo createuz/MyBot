@@ -3,8 +3,8 @@ from aiogram import Router, F
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery
 
-from app.bot.states import LanguageSelection
-from app.bot.translations import t
+from app.bot.kb.states import LanguageSelection
+from app.bot.kb.translations import t
 from app.core.logger import get_logger
 from app.utils.redis_manager import RedisManager
 from app.utils.user_service import upsert_user_language
@@ -18,7 +18,7 @@ async def lang_callback(call: CallbackQuery, state: FSMContext, **data):
     rid = data.get("request_id")
     logger = get_logger(rid)
     redis = RedisManager.client()
-    lang = call.data.split(":", 1)[1]
+    lang = call.data.split(":", 1)[1].strip()
     tg_id = call.from_user.id
     try:
         user_id = await upsert_user_language(session=db, chat_id=tg_id, language=lang)
@@ -33,8 +33,7 @@ async def lang_callback(call: CallbackQuery, state: FSMContext, **data):
         except Exception:
             logger.exception("rollback failed")
         await call.answer("Server error, try again later.", show_alert=True)
-        return
-
+        return await state.clear()
     try:
         if redis:
             await redis.set(f"user:{tg_id}:lang", lang, ex=7 * 24 * 3600)
@@ -46,4 +45,4 @@ async def lang_callback(call: CallbackQuery, state: FSMContext, **data):
         await call.message.edit_text(t(lang, "greeting"))
     except Exception:
         logger.warning("edit message failed")
-    await state.clear()
+    return await state.clear()

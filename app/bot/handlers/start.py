@@ -4,9 +4,9 @@ from aiogram.filters import CommandStart, StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.types import Message
 
-from app.bot.keyboards import language_keyboard
-from app.bot.states import LanguageSelection
-from app.bot.translations import t
+from app.bot.kb.keyboards import language_keyboard
+from app.bot.kb.states import LanguageSelection
+from app.bot.kb.translations import t
 from app.core.logger import get_logger
 from app.utils.redis_manager import RedisManager
 from app.utils.user_service import get_lang_cache_then_db, ensure_user_exists

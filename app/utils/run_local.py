@@ -6,8 +6,8 @@ from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 
 from app.bot.handlers import start as start_pkg, callbacks as cb_pkg, lang_cmd as lang_pkg
-from app.bot.middlewares.db_middleware import DBSessionMiddleware
-from app.bot.middlewares.request_id_middleware import RequestIDMiddleware
+from app.middlewares.db_middleware import DBSessionMiddleware
+from app.middlewares.request_id_middleware import RequestIDMiddleware
 from app.core.config import conf
 from app.core.logger import get_logger
 from app.db.session import init_db
