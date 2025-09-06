@@ -1,45 +1,3 @@
-# # app/core/logger.py
-# import logging
-# import sys
-# from typing import Optional
-#
-# import orjson
-# import structlog
-#
-# from app.core.config import conf
-#
-#
-# def orjson_dumps(v, *, default=None):
-#     return orjson.dumps(v, default=default).decode()
-#
-#
-# def setup_logger():
-#     level = getattr(logging, conf.bot.log_level.upper(), logging.INFO)
-#     logging.basicConfig(stream=sys.stdout, level=level, format="%(message)s")
-#     processors = [
-#         structlog.processors.TimeStamper(fmt="iso", utc=True),
-#         structlog.processors.add_log_level,
-#         structlog.processors.StackInfoRenderer(),
-#         structlog.processors.format_exc_info,
-#         structlog.processors.JSONRenderer(),
-#         # structlog.processors.JSONRenderer(serializer=orjson_dumps),
-#     ]
-#     structlog.configure(
-#         processors=processors,
-#         wrapper_class=structlog.make_filtering_bound_logger(level),
-#         logger_factory=structlog.PrintLoggerFactory(),
-#     )
-#     return structlog.get_logger()
-#
-#
-# _logger = setup_logger()
-#
-#
-# def get_logger(request_id: Optional[str] = None):
-#     if request_id:
-#         return _logger.bind(rid=request_id)
-#     return _logger
-
 # app/core/logger.py
 import logging
 import sys
@@ -48,54 +6,50 @@ from typing import Optional
 import orjson
 import structlog
 
-from app.core.config import conf  # sizdagi conf bo'lishi kerak
-
+from app.core.config import conf  # sizning conf obyekt
 
 def orjson_dumps(v, *, default=None):
     return orjson.dumps(v, default=default).decode()
 
-
 def setup_logger():
-    level_name = (conf.bot.log_level or "INFO").upper()
-    level = getattr(logging, level_name, logging.INFO)
+    # Get desired level from config (string like "INFO")
+    level_name = (getattr(conf, "bot", None) and getattr(conf.bot, "log_level", None)) or "INFO"
+    level = getattr(logging, level_name.upper(), logging.INFO)
 
-    # Basic logging -> stdout
+    # Ensure root has single stdout handler (no duplicate prints)
     root = logging.getLogger()
     for h in list(root.handlers):
         root.removeHandler(h)
 
-    logging.basicConfig(
-        stream=sys.stdout,
-        level=level,
-        format="%(message)s",
-    )
+    handler = logging.StreamHandler(sys.stdout)
+    handler.setLevel(level)
+    handler.setFormatter(logging.Formatter("%(message)s"))
+    root.addHandler(handler)
+    root.setLevel(level)
 
-    # Minimal processors for speed: timestamp + level + json
+    # Minimal fast processors: timestamp + level + JSON render
     processors = [
         structlog.processors.TimeStamper(fmt="iso", utc=True),
         structlog.processors.add_log_level,
-        # include stack info only for errors (we will log exc_info explicitly)
         structlog.processors.JSONRenderer(serializer=orjson_dumps),
     ]
 
     structlog.configure(
         processors=processors,
-        logger_factory=structlog.PrintLoggerFactory(),
         wrapper_class=structlog.make_filtering_bound_logger(level),
+        logger_factory=structlog.PrintLoggerFactory(),
         cache_logger_on_first_use=True,
     )
 
-    # Aiogram loglarni SUSpress qilish: DEBUG/INFO ni o'chiramiz, WARNING+ERROR qoldiramiz
-    for name in ("aiogram", "aiogram.dispatcher", "aiogram.client", "aiogram.fsm"):
+    # Reduce aiogram / aiohttp noisy logs: keep WARNING+ERROR only
+    for name in ("aiogram", "aiogram.dispatcher", "aiogram.client", "aiohttp", "asyncio"):
         lg = logging.getLogger(name)
-        lg.setLevel(logging.WARNING)  # DEBUG/INFO lar chiqmaydi, WARNING+ERROR qoladi
-        lg.propagate = True  # root handlerga o'tsin (structlog orqali render bo'ladi)
+        lg.setLevel(logging.WARNING)
+        lg.propagate = True
 
     return structlog.get_logger()
 
-
 _logger = setup_logger()
-
 
 def get_logger(request_id: Optional[str] = None):
     return _logger.bind(rid=request_id) if request_id else _logger

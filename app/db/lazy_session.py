@@ -1,5 +1,6 @@
 # app/db/lazy_session.py
-from typing import Optional, Callable
+
+from typing import Optional, Callable, Any, cast
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -14,6 +15,13 @@ class LazySessionProxy:
         if not self._session:
             self._session = self._maker()
             self.session_created = True
+            if not hasattr(self._session, "info"):
+                try:
+                    setattr(self._session, "info", {})
+                except Exception:
+                    pass
+            else:
+                _ = cast(Any, self._session).info
         return self._session
 
     def get_underlying_session(self) -> Optional[AsyncSession]:
@@ -36,12 +44,12 @@ class LazySessionProxy:
 
     async def commit(self):
         if not self._session:
-            return
+            return None
         return await self._session.commit()
 
     async def rollback(self):
         if not self._session:
-            return
+            return None
         return await self._session.rollback()
 
     async def close(self):
