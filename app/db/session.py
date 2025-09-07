@@ -9,17 +9,6 @@ from app.core.logger import get_logger
 logger = get_logger()
 Base = declarative_base()
 
-# build engine with pool sizing (or advise using PgBouncer)
-# _engine = create_async_engine(
-#     conf.db.sqlalchemy_url(),
-#     echo=False,
-#     future=True,
-#     pool_pre_ping=True,
-#     # tune pool via pool_size & max_overflow if not using PgBouncer.
-#     pool_size=conf.db.pool_min,
-#     max_overflow=conf.db.pool_max,
-# )
-
 if conf.db.use_pgbouncer:
     poolclass = NullPool
     logger.info("Using NullPool because use_pgbouncer=True (recommended for transaction pooling)")
